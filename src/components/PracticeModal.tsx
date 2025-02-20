@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Volume as VolumeUp, X, Loader2, ArrowRight, RotateCcw } from 'lucide-react';
+import { Mic, Volume, X, Loader2, ArrowRight, RotateCcw } from 'lucide-react';
 import type { Word } from '../types';
 import { addAttempt } from '../lib/storage';
 
@@ -33,9 +33,6 @@ export function PracticeModal({ word, onClose, onNext, isLastWord }: PracticeMod
         
         const similarityScore = calculateSimilarity(cleanSpokenWord, cleanTargetWord) * 100;
         const finalScore = (similarityScore + confidence * 100) / 2;
-        
-        setIsProcessing(false);
-        setIsRecording(false);
 
         addAttempt(word.id, finalScore, spokenWord);
 
@@ -60,13 +57,19 @@ export function PracticeModal({ word, onClose, onNext, isLastWord }: PracticeMod
         }
       };
 
-      recognition.current.onerror = () => {
+      recognition.current.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
         setIsProcessing(false);
         setIsRecording(false);
         setFeedback({
           message: "Sorry, there was an error. Please try again.",
           score: 0
         });
+      };
+
+      recognition.current.onend = () => {
+        setIsProcessing(false);
+        setIsRecording(false);
       };
     }
 
@@ -79,10 +82,72 @@ export function PracticeModal({ word, onClose, onNext, isLastWord }: PracticeMod
 
   const startRecording = async () => {
     try {
+      if (!recognition.current) {
+        throw new Error('Speech recognition not available');
+      }
+
       setIsProcessing(true);
       setFeedback(null);
       setIsRecording(true);
-      recognition.current?.start();
+
+      // Reset recognition instance
+      recognition.current.abort();
+      recognition.current = new webkitSpeechRecognition();
+      recognition.current.continuous = false;
+      recognition.current.interimResults = false;
+      recognition.current.lang = 'en-US';
+
+      // Re-attach event handlers
+      recognition.current.onresult = (event) => {
+        const spokenWord = event.results[0][0].transcript.toLowerCase();
+        const targetWord = word.word.toLowerCase();
+        const confidence = event.results[0][0].confidence;
+        
+        const cleanSpokenWord = spokenWord.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "").trim();
+        const cleanTargetWord = targetWord.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "").trim();
+        
+        const similarityScore = calculateSimilarity(cleanSpokenWord, cleanTargetWord) * 100;
+        const finalScore = (similarityScore + confidence * 100) / 2;
+
+        addAttempt(word.id, finalScore, spokenWord);
+
+        if (finalScore >= 80) {
+          setFeedback({
+            message: "Perfect! You're doing great! 🎉",
+            score: finalScore,
+            spokenWord
+          });
+        } else if (finalScore >= 70) {
+          setFeedback({
+            message: "Almost there! Try again focusing on the pronunciation.",
+            score: finalScore,
+            spokenWord
+          });
+        } else {
+          setFeedback({
+            message: "Let's practice more. Listen to the word again and try to match it.",
+            score: finalScore,
+            spokenWord
+          });
+        }
+      };
+
+      recognition.current.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsProcessing(false);
+        setIsRecording(false);
+        setFeedback({
+          message: "Sorry, there was an error. Please try again.",
+          score: 0
+        });
+      };
+
+      recognition.current.onend = () => {
+        setIsProcessing(false);
+        setIsRecording(false);
+      };
+
+      recognition.current.start();
     } catch (error) {
       console.error('Error accessing microphone:', error);
       setFeedback({
@@ -129,7 +194,7 @@ export function PracticeModal({ word, onClose, onNext, isLastWord }: PracticeMod
           <h2 className="text-2xl font-bold text-[#58CC02]">Practice Pronunciation</h2>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 p-2 hover:bg-gray-100 rounded-xl transition-colors md:block hidden"
+            className="text-gray-500 hover:text-gray-700 p-2 hover:bg-gray-100 rounded-xl transition-colors"
           >
             <X size={24} />
           </button>
@@ -149,7 +214,7 @@ export function PracticeModal({ word, onClose, onNext, isLastWord }: PracticeMod
                 onClick={playReference}
                 className="flex items-center gap-2 px-6 py-3 bg-[#58CC02] text-white rounded-2xl hover:bg-[#46A302] transition-colors shadow-lg font-bold text-lg"
               >
-                <VolumeUp size={24} />
+                <Volume size={24} />
                 Listen
               </button>
               <button
@@ -211,16 +276,6 @@ export function PracticeModal({ word, onClose, onNext, isLastWord }: PracticeMod
               </div>
             </div>
           )}
-        </div>
-        
-        {/* Mobile close button */}
-        <div className="p-4 border-t md:hidden">
-          <button
-            onClick={onClose}
-            className="w-full py-3 text-[#58CC02] border-2 border-[#58CC02] rounded-2xl hover:bg-[#58CC02]/5 transition-colors font-bold"
-          >
-            Close Practice
-          </button>
         </div>
       </div>
     </div>

@@ -17,7 +17,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'practice' | 'words' | 'stats'>('practice');
   const [stats, setStats] = useState(getStatistics());
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
     setWords(getWords());
@@ -65,6 +65,11 @@ function App() {
     }
   };
 
+  const handleTabChange = (tab: 'practice' | 'words' | 'stats') => {
+    setActiveTab(tab);
+    setIsSidebarOpen(false);
+  };
+
   return (
     <div className="min-h-screen bg-duo-dark-200 flex flex-col">
       <Toaster 
@@ -90,7 +95,7 @@ function App() {
               onClick={() => setIsSidebarOpen(prev => !prev)}
               className="text-white hover:text-duo-green transition-colors p-2 rounded-lg"
             >
-              {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+              <Menu size={24} />
             </button>
           </div>
         </div>
@@ -98,7 +103,7 @@ function App() {
 
       <div className="flex-1 flex">
         {/* Main Content */}
-        <main className={`flex-1 transition-all duration-300 ${isSidebarOpen ? 'mr-64 md:mr-72' : 'mr-0'}`}>
+        <main className="flex-1">
           <div className="max-w-7xl mx-auto px-4 py-8">
             {loading ? (
               <div className="text-center py-12">
@@ -153,54 +158,60 @@ function App() {
           </div>
         </main>
 
-        {/* Side Menu */}
-        <nav className={`fixed top-0 right-0 h-full w-64 md:w-72 bg-duo-dark-100 border-l border-duo-dark-50 transform transition-transform duration-300 ease-in-out ${
-          isSidebarOpen ? 'translate-x-0' : 'translate-x-full'
-        } pt-24`}>
-          <div className="p-4 space-y-2">
-            <button
-              onClick={() => {
-                setActiveTab('practice');
-                window.innerWidth < 768 && setIsSidebarOpen(false);
-              }}
-              className={`w-full px-4 py-3 rounded-lg font-medium transition-colors flex items-center gap-3 ${
-                activeTab === 'practice'
-                  ? 'bg-duo-green text-white'
-                  : 'text-gray-400 hover:text-white hover:bg-duo-dark-50'
-              }`}
-            >
-              <GraduationCap size={20} />
-              Practice
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('words');
-                window.innerWidth < 768 && setIsSidebarOpen(false);
-              }}
-              className={`w-full px-4 py-3 rounded-lg font-medium transition-colors flex items-center gap-3 ${
-                activeTab === 'words'
-                  ? 'bg-duo-green text-white'
-                  : 'text-gray-400 hover:text-white hover:bg-duo-dark-50'
-              }`}
-            >
-              <BookOpen size={20} />
-              My Words
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('stats');
-                setStats(getStatistics());
-                window.innerWidth < 768 && setIsSidebarOpen(false);
-              }}
-              className={`w-full px-4 py-3 rounded-lg font-medium transition-colors flex items-center gap-3 ${
-                activeTab === 'stats'
-                  ? 'bg-duo-green text-white'
-                  : 'text-gray-400 hover:text-white hover:bg-duo-dark-50'
-              }`}
-            >
-              <BarChart2 size={20} />
-              Statistics
-            </button>
+        {/* Side Menu - Now using a fixed position with transform */}
+        <nav 
+          className={`fixed top-0 right-0 h-full w-64 md:w-72 bg-duo-dark-100 border-l border-duo-dark-50 transform transition-transform duration-300 ease-in-out ${
+            isSidebarOpen ? 'translate-x-0' : 'translate-x-full'
+          } z-30 shadow-xl`}
+        >
+          <div className="h-full flex flex-col">
+            <div className="flex items-center justify-end p-4 border-b border-duo-dark-50">
+              <button
+                onClick={() => setIsSidebarOpen(false)}
+                className="text-white hover:text-duo-green transition-colors p-2 rounded-lg"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="flex-1 p-4 space-y-2">
+              <button
+                onClick={() => handleTabChange('practice')}
+                className={`w-full px-4 py-3 rounded-lg font-medium transition-colors flex items-center gap-3 ${
+                  activeTab === 'practice'
+                    ? 'bg-duo-green text-white'
+                    : 'text-gray-400 hover:text-white hover:bg-duo-dark-50'
+                }`}
+              >
+                <GraduationCap size={20} />
+                Practice
+              </button>
+              <button
+                onClick={() => handleTabChange('words')}
+                className={`w-full px-4 py-3 rounded-lg font-medium transition-colors flex items-center gap-3 ${
+                  activeTab === 'words'
+                    ? 'bg-duo-green text-white'
+                    : 'text-gray-400 hover:text-white hover:bg-duo-dark-50'
+                }`}
+              >
+                <BookOpen size={20} />
+                My Words
+              </button>
+              <button
+                onClick={() => {
+                  handleTabChange('stats');
+                  setStats(getStatistics());
+                }}
+                className={`w-full px-4 py-3 rounded-lg font-medium transition-colors flex items-center gap-3 ${
+                  activeTab === 'stats'
+                    ? 'bg-duo-green text-white'
+                    : 'text-gray-400 hover:text-white hover:bg-duo-dark-50'
+                }`}
+              >
+                <BarChart2 size={20} />
+                Statistics
+              </button>
+            </div>
           </div>
         </nav>
       </div>
