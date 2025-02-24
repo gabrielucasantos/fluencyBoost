@@ -11,7 +11,7 @@ export interface WordAttempt {
   word_id: string;
   score: number;
   timestamp: string;
-  spoken_word?: string; // Add field to track what was actually spoken
+  spoken_word?: string;
 }
 
 export interface Statistics {

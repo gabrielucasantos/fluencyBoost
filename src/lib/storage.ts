@@ -1,87 +1,84 @@
 import type { Word, WordAttempt } from '../types';
 
-const STORAGE_KEY = 'pronunciation_words';
-const ATTEMPTS_KEY = 'pronunciation_attempts';
-const MISPRONUNCIATIONS_KEY = 'pronunciation_mispronunciations';
+const STORAGE_KEY = 'fluencyboost_data';
 
-export function getWords(): Word[] {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  return stored ? JSON.parse(stored) : [];
+interface StorageData {
+  words: Word[];
+  attempts: WordAttempt[];
 }
 
-export function saveWords(words: Word[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(words));
+function getStorageData(): StorageData {
+  const data = localStorage.getItem(STORAGE_KEY);
+  if (!data) {
+    return { words: [], attempts: [] };
+  }
+  return JSON.parse(data);
 }
 
-export function addWord(word: Omit<Word, 'id' | 'created_at'>): Word {
-  const words = getWords();
-  const newWord: Word = {
+function setStorageData(data: StorageData) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+export async function getWords(): Promise<Word[]> {
+  const { words, attempts } = getStorageData();
+  return words.map(word => ({
     ...word,
+    attempts: attempts.filter(attempt => attempt.word_id === word.id)
+  }));
+}
+
+export async function addWord(word: Pick<Word, 'word' | 'translation'>): Promise<Word> {
+  const data = getStorageData();
+  const newWord: Word = {
     id: crypto.randomUUID(),
-    created_at: new Date().toISOString(),
+    word: word.word,
+    translation: word.translation,
+    created_at: new Date().toISOString()
   };
   
-  words.unshift(newWord);
-  saveWords(words);
+  data.words.push(newWord);
+  setStorageData(data);
   return newWord;
 }
 
-export function deleteWord(id: string): void {
-  const words = getWords();
-  const filtered = words.filter(word => word.id !== id);
-  saveWords(filtered);
-  // Also delete associated attempts
-  const attempts = getAttempts();
-  const filteredAttempts = attempts.filter(attempt => attempt.word_id !== id);
-  saveAttempts(filteredAttempts);
+export async function deleteWord(id: string): Promise<void> {
+  const data = getStorageData();
+  data.words = data.words.filter(word => word.id !== id);
+  data.attempts = data.attempts.filter(attempt => attempt.word_id !== id);
+  setStorageData(data);
 }
 
-export function getAttempts(): WordAttempt[] {
-  const stored = localStorage.getItem(ATTEMPTS_KEY);
-  return stored ? JSON.parse(stored) : [];
-}
-
-export function saveAttempts(attempts: WordAttempt[]): void {
-  localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(attempts));
-}
-
-export function addAttempt(wordId: string, score: number, spokenWord?: string): WordAttempt {
-  const attempts = getAttempts();
+export async function addAttempt(wordId: string, score: number, spokenWord?: string): Promise<WordAttempt> {
+  const data = getStorageData();
   const newAttempt: WordAttempt = {
     id: crypto.randomUUID(),
     word_id: wordId,
     score,
     timestamp: new Date().toISOString(),
-    spoken_word: spokenWord,
+    spoken_word: spokenWord
   };
   
-  attempts.push(newAttempt);
-  saveAttempts(attempts);
+  data.attempts.push(newAttempt);
+  setStorageData(data);
   return newAttempt;
 }
 
-export function resetMispronunciations(): void {
-  localStorage.removeItem(MISPRONUNCIATIONS_KEY);
-}
+export async function getStatistics() {
+  const { words, attempts } = getStorageData();
 
-export function getStatistics() {
-  const words = getWords();
-  const attempts = getAttempts();
-  
   const totalAttempts = attempts.length;
   const averageScore = totalAttempts > 0
     ? attempts.reduce((sum, attempt) => sum + attempt.score, 0) / totalAttempts
     : 0;
   const successfulAttempts = attempts.filter(attempt => attempt.score >= 80).length;
   const successRate = totalAttempts > 0 ? (successfulAttempts / totalAttempts) * 100 : 0;
-  
+
   const wordPerformance = words.map(word => {
     const wordAttempts = attempts.filter(attempt => attempt.word_id === word.id);
     const avgScore = wordAttempts.length > 0
       ? wordAttempts.reduce((sum, attempt) => sum + attempt.score, 0) / wordAttempts.length
       : 0;
-    
-    // Track mispronunciations
+
     const mispronunciations = wordAttempts
       .filter(attempt => attempt.score < 70 && attempt.spoken_word)
       .reduce((acc, attempt) => {
@@ -96,7 +93,7 @@ export function getStatistics() {
         acc[key].count++;
         return acc;
       }, {} as Record<string, { expected: string; spoken: string; count: number }>);
-    
+
     return {
       word: word.word,
       averageScore: avgScore,
@@ -104,7 +101,7 @@ export function getStatistics() {
       mispronunciations: Object.values(mispronunciations),
     };
   });
-  
+
   return {
     totalAttempts,
     averageScore,

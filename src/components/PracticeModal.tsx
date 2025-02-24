@@ -14,71 +14,142 @@ export function PracticeModal({ word, onClose, onNext, isLastWord }: PracticeMod
   const [isRecording, setIsRecording] = useState(false);
   const [feedback, setFeedback] = useState<{ message: string; score: number; spokenWord?: string } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isRecognitionSupported, setIsRecognitionSupported] = useState(true);
   const recognition = useRef<SpeechRecognition | null>(null);
+  const timeoutRef = useRef<number | null>(null);
 
+  // Initialize recognition when word changes
   useEffect(() => {
     if ('webkitSpeechRecognition' in window) {
+      // Create a new instance for each word to ensure fresh state
       recognition.current = new webkitSpeechRecognition();
       recognition.current.continuous = false;
       recognition.current.interimResults = false;
       recognition.current.lang = 'en-US';
+      recognition.current.maxAlternatives = 1;
 
-      recognition.current.onresult = (event) => {
-        const spokenWord = event.results[0][0].transcript.toLowerCase();
-        const targetWord = word.word.toLowerCase();
-        const confidence = event.results[0][0].confidence;
-        
-        const cleanSpokenWord = spokenWord.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "").trim();
-        const cleanTargetWord = targetWord.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "").trim();
-        
-        const similarityScore = calculateSimilarity(cleanSpokenWord, cleanTargetWord) * 100;
-        const finalScore = (similarityScore + confidence * 100) / 2;
-
-        addAttempt(word.id, finalScore, spokenWord);
-
-        if (finalScore >= 80) {
-          setFeedback({
-            message: "Perfect! You're doing great! 🎉",
-            score: finalScore,
-            spokenWord
-          });
-        } else if (finalScore >= 70) {
-          setFeedback({
-            message: "Almost there! Try again focusing on the pronunciation.",
-            score: finalScore,
-            spokenWord
-          });
-        } else {
-          setFeedback({
-            message: "Let's practice more. Listen to the word again and try to match it.",
-            score: finalScore,
-            spokenWord
-          });
-        }
-      };
-
-      recognition.current.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        setIsProcessing(false);
-        setIsRecording(false);
-        setFeedback({
-          message: "Sorry, there was an error. Please try again.",
-          score: 0
-        });
-      };
-
-      recognition.current.onend = () => {
-        setIsProcessing(false);
-        setIsRecording(false);
-      };
+      setupRecognitionHandlers();
+    } else {
+      setIsRecognitionSupported(false);
     }
 
     return () => {
       if (recognition.current) {
         recognition.current.abort();
       }
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+      }
     };
-  }, [word]);
+  }, [word]); // Reinitialize when word changes
+
+  const normalizeWord = (text: string): string => {
+    return text
+      .toLowerCase() // Convert to lowercase
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove accents
+      .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"']/g, '') // Remove punctuation
+      .replace(/\s+/g, ' ') // Normalize spaces
+      .trim(); // Remove leading/trailing spaces
+  };
+
+  const setupRecognitionHandlers = () => {
+    if (!recognition.current) return;
+
+    recognition.current.onstart = () => {
+      setIsRecording(true);
+      setIsProcessing(true);
+      timeoutRef.current = window.setTimeout(() => {
+        if (recognition.current && isRecording) {
+          recognition.current.stop();
+          setFeedback({
+            message: "Recording took too long. Please try again.",
+            score: 0
+          });
+          setIsProcessing(false);
+          setIsRecording(false);
+        }
+      }, 10000);
+    };
+
+    recognition.current.onresult = (event) => {
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+      }
+
+      const spokenWord = event.results[0][0].transcript;
+      const confidence = event.results[0][0].confidence;
+      
+      const normalizedSpoken = normalizeWord(spokenWord);
+      const normalizedTarget = normalizeWord(word.word);
+      
+      // Log for debugging
+      console.log('Spoken:', normalizedSpoken);
+      console.log('Target:', normalizedTarget);
+      
+      let similarityScore: number;
+      
+      if (normalizedSpoken === normalizedTarget) {
+        // Perfect match after normalization
+        similarityScore = 100;
+      } else {
+        // Calculate similarity for non-exact matches
+        similarityScore = calculateSimilarity(normalizedSpoken, normalizedTarget) * 100;
+      }
+
+      // Weight the final score
+      const finalScore = (similarityScore * 0.7 + confidence * 100 * 0.3);
+
+      // Log scores for debugging
+      console.log('Similarity Score:', similarityScore);
+      console.log('Confidence:', confidence * 100);
+      console.log('Final Score:', finalScore);
+
+      addAttempt(word.id, finalScore, spokenWord);
+
+      if (finalScore >= 80) {
+        setFeedback({
+          message: "Perfect! You're doing great! 🎉",
+          score: finalScore,
+          spokenWord
+        });
+      } else if (finalScore >= 70) {
+        setFeedback({
+          message: "Almost there! Try again focusing on the pronunciation.",
+          score: finalScore,
+          spokenWord
+        });
+      } else {
+        setFeedback({
+          message: "Let's practice more. Listen to the word again and try to match it.",
+          score: finalScore,
+          spokenWord
+        });
+      }
+    };
+
+    recognition.current.onerror = (event) => {
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+      }
+      console.error('Speech recognition error:', event.error);
+      setIsProcessing(false);
+      setIsRecording(false);
+      setFeedback({
+        message: event.error === 'not-allowed' 
+          ? "Please allow microphone access to use this feature."
+          : "Sorry, there was an error. Please try again.",
+        score: 0
+      });
+    };
+
+    recognition.current.onend = () => {
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+      }
+      setIsProcessing(false);
+      setIsRecording(false);
+    };
+  };
 
   const startRecording = async () => {
     try {
@@ -88,64 +159,10 @@ export function PracticeModal({ word, onClose, onNext, isLastWord }: PracticeMod
 
       setIsProcessing(true);
       setFeedback(null);
-      setIsRecording(true);
 
-      // Reset recognition instance
-      recognition.current.abort();
-      recognition.current = new webkitSpeechRecognition();
-      recognition.current.continuous = false;
-      recognition.current.interimResults = false;
-      recognition.current.lang = 'en-US';
-
-      // Re-attach event handlers
-      recognition.current.onresult = (event) => {
-        const spokenWord = event.results[0][0].transcript.toLowerCase();
-        const targetWord = word.word.toLowerCase();
-        const confidence = event.results[0][0].confidence;
-        
-        const cleanSpokenWord = spokenWord.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "").trim();
-        const cleanTargetWord = targetWord.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "").trim();
-        
-        const similarityScore = calculateSimilarity(cleanSpokenWord, cleanTargetWord) * 100;
-        const finalScore = (similarityScore + confidence * 100) / 2;
-
-        addAttempt(word.id, finalScore, spokenWord);
-
-        if (finalScore >= 80) {
-          setFeedback({
-            message: "Perfect! You're doing great! 🎉",
-            score: finalScore,
-            spokenWord
-          });
-        } else if (finalScore >= 70) {
-          setFeedback({
-            message: "Almost there! Try again focusing on the pronunciation.",
-            score: finalScore,
-            spokenWord
-          });
-        } else {
-          setFeedback({
-            message: "Let's practice more. Listen to the word again and try to match it.",
-            score: finalScore,
-            spokenWord
-          });
-        }
-      };
-
-      recognition.current.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        setIsProcessing(false);
-        setIsRecording(false);
-        setFeedback({
-          message: "Sorry, there was an error. Please try again.",
-          score: 0
-        });
-      };
-
-      recognition.current.onend = () => {
-        setIsProcessing(false);
-        setIsRecording(false);
-      };
+      // Request microphone permission first
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop());
 
       recognition.current.start();
     } catch (error) {
@@ -164,14 +181,13 @@ export function PracticeModal({ word, onClose, onNext, isLastWord }: PracticeMod
     speech.lang = 'en-US';
     speech.rate = 0.8;
     
-    // Get available voices and filter English ones
     const voices = window.speechSynthesis.getVoices().filter(voice => 
       voice.lang.startsWith('en-')
     );
     
     if (voices.length > 0) {
-      // Randomly select a voice
-      speech.voice = voices[Math.floor(Math.random() * voices.length)];
+      const usVoice = voices.find(voice => voice.lang === 'en-US');
+      speech.voice = usVoice || voices[0];
     }
     
     window.speechSynthesis.speak(speech);
@@ -186,6 +202,25 @@ export function PracticeModal({ word, onClose, onNext, isLastWord }: PracticeMod
     setFeedback(null);
     startRecording();
   };
+
+  if (!isRecognitionSupported) {
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl p-8">
+          <h2 className="text-2xl font-bold text-red-500 mb-4">Speech Recognition Not Supported</h2>
+          <p className="text-gray-600 mb-6">
+            Sorry, your browser doesn't support speech recognition. Please try using a modern browser like Chrome, Edge, or Safari.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full px-6 py-3 bg-duo-green text-white rounded-2xl hover:bg-duo-green-hover transition-colors font-bold"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -248,7 +283,7 @@ export function PracticeModal({ word, onClose, onNext, isLastWord }: PracticeMod
                 <div className="flex flex-col items-center gap-3">
                   <div className="text-3xl font-bold">{Math.round(feedback.score)}%</div>
                   <p className="text-center text-lg font-medium">{feedback.message}</p>
-                  {feedback.spokenWord && feedback.score < 70 && (
+                  {feedback.spokenWord && (
                     <p className="text-sm mt-2">
                       You said: <span className="font-medium">{feedback.spokenWord}</span>
                     </p>
@@ -283,6 +318,8 @@ export function PracticeModal({ word, onClose, onNext, isLastWord }: PracticeMod
 }
 
 function calculateSimilarity(str1: string, str2: string): number {
+  if (str1 === str2) return 1.0;
+  
   const longer = str1.length > str2.length ? str1 : str2;
   const shorter = str1.length > str2.length ? str2 : str1;
   

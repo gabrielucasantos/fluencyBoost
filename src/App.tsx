@@ -5,7 +5,7 @@ import { AddWordForm } from './components/AddWordForm';
 import { PracticeModal } from './components/PracticeModal';
 import { Statistics } from './components/Statistics';
 import { HowItWorks } from './components/HowItWorks';
-import { getWords, addWord, deleteWord, getStatistics, resetMispronunciations } from './lib/storage';
+import { getWords, addWord, deleteWord, getStatistics } from './lib/storage';
 import type { Word } from './types';
 import { GraduationCap, BookOpen, BarChart2, Menu, X } from 'lucide-react';
 
@@ -16,17 +16,34 @@ function App() {
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'practice' | 'words' | 'stats'>('practice');
-  const [stats, setStats] = useState(getStatistics());
+  const [stats, setStats] = useState({
+    totalAttempts: 0,
+    averageScore: 0,
+    successRate: 0,
+    wordPerformance: []
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  const loadWords = async () => {
+    try {
+      const words = await getWords();
+      setWords(words);
+      const stats = await getStatistics();
+      setStats(stats);
+    } catch (error) {
+      toast.error('Error loading words');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    setWords(getWords());
-    setLoading(false);
+    loadWords();
   }, []);
 
-  const handleAddWord = (data: { word: string; translation: string }) => {
+  const handleAddWord = async (data: { word: string; translation: string }) => {
     try {
-      const newWord = addWord(data);
+      const newWord = await addWord(data);
       setWords(prev => [newWord, ...prev]);
       toast.success('Word added successfully');
       setShowAddForm(false);
@@ -35,9 +52,9 @@ function App() {
     }
   };
 
-  const handleDeleteWord = (id: string) => {
+  const handleDeleteWord = async (id: string) => {
     try {
-      deleteWord(id);
+      await deleteWord(id);
       setWords(prev => prev.filter(word => word.id !== id));
       toast.success('Word deleted successfully');
     } catch (error) {
@@ -50,7 +67,6 @@ function App() {
     const shuffledWords = [...words].sort(() => Math.random() - 0.5);
     setWords(shuffledWords);
     setSelectedWord(shuffledWords[0]);
-    resetMispronunciations();
   };
 
   const handleNextWord = () => {
@@ -60,7 +76,7 @@ function App() {
     } else {
       setSelectedWord(null);
       setCurrentWordIndex(0);
-      setStats(getStatistics());
+      getStatistics().then(setStats);
       toast.success('Practice completed! 🎉');
     }
   };
@@ -158,7 +174,7 @@ function App() {
           </div>
         </main>
 
-        {/* Side Menu - Now using a fixed position with transform */}
+        {/* Side Menu */}
         <nav 
           className={`fixed top-0 right-0 h-full w-64 md:w-72 bg-duo-dark-100 border-l border-duo-dark-50 transform transition-transform duration-300 ease-in-out ${
             isSidebarOpen ? 'translate-x-0' : 'translate-x-full'
@@ -200,7 +216,7 @@ function App() {
               <button
                 onClick={() => {
                   handleTabChange('stats');
-                  setStats(getStatistics());
+                  getStatistics().then(setStats);
                 }}
                 className={`w-full px-4 py-3 rounded-lg font-medium transition-colors flex items-center gap-3 ${
                   activeTab === 'stats'
